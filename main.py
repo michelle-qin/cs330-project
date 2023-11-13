@@ -50,6 +50,8 @@ num_way = 2
 learning_rate = 1e-3
 meta_train_steps = 2
 meta_batch_size = 1
+random_seed = 123
+hidden_dim = 128
 
 def label_to_one_hot(label, num_classes):
     one_hot = np.zeros(num_classes)
@@ -162,6 +164,9 @@ def meta_train_step(images, labels, model, optim, eval=False):
     return predictions.detach(), loss.detach()
 
 if __name__ == "__main__":
+
+    writer = SummaryWriter(f"runs/{num_way}_{num_shot}_{random_seed}_{hidden_dim}")
+
     train_labels_and_images = get_images(train_pet_categories)
     test_labels_and_images = get_images(test_pet_categories)
     train_image_batch, train_label_batch = _sample(train_labels_and_images)
@@ -179,7 +184,7 @@ if __name__ == "__main__":
     test_image_batch = test_image_batch.reshape((1, K, N, test_image_size))
     test_label_batch = test_label_batch.reshape((1, K, N, N))
 
-    model = MANN(2, 2 + 1, 128)
+    model = MANN(num_way, num_shot + 1, hidden_dim)
     optim = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     times = []
@@ -193,6 +198,7 @@ if __name__ == "__main__":
         _, ls = meta_train_step(i, l, model, optim)
         t2 = time.time()
         print("Loss/train", ls, step)
+        writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
 
         # Evaluate 
@@ -200,6 +206,7 @@ if __name__ == "__main__":
         pred, tls = meta_train_step(i, l, model, optim, eval=True)   
         print("Train Loss:", ls.cpu().numpy(), "Test Loss:", tls.cpu().numpy())     
         print("Loss/test", tls, step)
+        writer.add_scalar("Loss/test", tls, step)
         pred = torch.reshape(
             pred, [-1, num_shot + 1, num_way, num_way]
         )
@@ -209,6 +216,7 @@ if __name__ == "__main__":
         acc = pred.eq(l).sum().item() / (meta_batch_size * num_way)
         print("Test Accuracy", acc)
         print("Accuracy/test", acc, step)
+        writer.add_scalar("Accuracy/test", acc, step)
 
         times = np.array(times)
         print(f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}")
