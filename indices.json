@@ -1,0 +1,13 @@
+{
+  "laion5B": {
+    "indice_folder": "laion5B-index",
+    "provide_safety_model": true,
+    "enable_faiss_memory_mapping": true,
+    "use_arrow": true,
+    "enable_hdf5": false,
+    "reorder_metadata_by_ivf_index": false,
+    "columns_to_return": ["url", "caption"],
+    "clip_model": "ViT-L/14",
+    "enable_mclip_option": true
+  }
+}
