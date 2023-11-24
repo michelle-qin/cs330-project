@@ -10,6 +10,7 @@ from tqdm import tqdm
 import random
 from torch.utils.tensorboard import SummaryWriter
 import time
+from transformers import BlipProcessor, BlipForConditionalGeneration
 
 client = ClipClient(url="https://knn.laion.ai/knn-service", indice_name="laion5B-L-14")
 all_pet_categories = [
@@ -53,6 +54,16 @@ meta_batch_size = 1
 random_seed = 123
 hidden_dim = 128
 
+# Image Captioning Model
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+
+def generate_caption(image):
+    inputs = processor(text=None, images=image, return_tensors="pt", padding=True)
+    outputs = model.generate(**inputs)
+    caption = processor.decode(outputs[0], skip_special_tokens=True)
+    return caption
+
 def label_to_one_hot(label, num_classes):
     one_hot = np.zeros(num_classes)
     one_hot[label] = 1
@@ -65,7 +76,6 @@ def get_images(pet_categories):
     for label_idx in range(num_way):
         pet = pet_categories[label_idx]
         pet_images = client.query(text="an image of a " + pet)
-        print(pet, len(pet_images))
         samples = []
 
         i = 0 
@@ -74,8 +84,8 @@ def get_images(pet_categories):
             response = requests.get(image_path)
             if response.status_code == 200:
                 try:
-                    print(image_path)
                     image = Image.open(io.BytesIO(response.content))
+
                     image_array = np.asarray(image)
                     image_array = image_file_to_array(image_array)
 
@@ -83,10 +93,6 @@ def get_images(pet_categories):
                     samples.append((one_hot_label, image_array))
                 except: 
                     print("Issue with getting image")
-            # TESTING
-            # random_array = np.random.rand(256*256*3)
-            # one_hot_label = label_to_one_hot(label_idx, num_way)
-            # samples.append((one_hot_label, random_array))
             i += 1
 
         image_and_labels.extend(samples)
@@ -116,7 +122,6 @@ def image_file_to_array(image_array):
     image_array = image_array.astype(np.float32) / 255.0  # Normalize the array
     image_array = 1.0 - image_array
     image_array = image_array.reshape(-1)  # Flatten the array
-    print(image_array.shape)
     return image_array
 
 def _sample(labels_and_images):
@@ -138,6 +143,7 @@ def _sample(labels_and_images):
         k_labels[i] = np.asarray(k_labels[i])
 
     image_batch = np.asarray(k_images)
+    print("IMAGE BATCH: ", image_batch)
     label_batch = np.asarray(k_labels)
     
     # Step 4: Shuffle the order of examples from the query set
@@ -153,8 +159,6 @@ def _sample(labels_and_images):
     return (image_batch, label_batch)
 
 def meta_train_step(images, labels, model, optim, eval=False):
-    print(images.size())
-    print(labels.size())
     predictions = model(images, labels)
     loss = model.loss_function(predictions, labels)
     if not eval:
@@ -166,7 +170,7 @@ def meta_train_step(images, labels, model, optim, eval=False):
 if __name__ == "__main__":
 
     writer = SummaryWriter(f"runs/{num_way}_{num_shot}_{random_seed}_{hidden_dim}")
-
+    
     train_labels_and_images = get_images(train_pet_categories)
     test_labels_and_images = get_images(test_pet_categories)
     train_image_batch, train_label_batch = _sample(train_labels_and_images)
@@ -178,7 +182,23 @@ if __name__ == "__main__":
     train_image_batch = train_image_batch.reshape((1, K, N, train_image_size))
     train_label_batch = train_label_batch.reshape((1, K, N, N))
 
+    print("TRAIN IMAGE BATCH: ", train_image_batch) #TODO I notice there is a discrepancy between IMAGE BATCH and TRAIN IMAGE BATCH?
     # SUPPLEMENT THE DATA HERE
+    supplemented_data = []
+    for batch in train_image_batch:
+        print("BATCH: ", batch)
+        for image_tensor in batch:
+            print("IMAGE TENSOR: ", image_tensor)
+            # convert the tensor to PIL Image for caption generation
+            image = Image.fromarray(image_tensor.numpy().astype(np.uint8))
+            # generate caption
+            caption = generate_caption(image)
+            print("CAPTION: ", caption)
+            # store the image tensor and its caption
+            supplemented_data.append((image_tensor, caption))
+    print(supplemented_data)
+    
+    quit()
     
     test_image_batch = torch.from_numpy(test_image_batch)
     test_label_batch = torch.from_numpy(test_label_batch)
