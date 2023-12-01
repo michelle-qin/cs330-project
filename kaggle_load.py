@@ -58,7 +58,7 @@ def process_image(image_path):
     # Load and preprocess an image 
     img = Image.open(image_path) 
     preprocess = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), ])
-    img_tensor = preprocess(img) 
+    img_tensor = preprocess(img) # (3, 224, 224)
     return img_tensor
 
 def main():
@@ -70,10 +70,10 @@ def main():
 
     train_cat = process_image("kaggle_data/train/cat." + str(cat_num) + ".jpg")
     train_dog = process_image("kaggle_data/train/dog." + str(dog_num) + ".jpg")
+    
     train_data = [train_cat, train_dog]
     train_labels = [[0, 1], [1, 0]]
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
-
     # TEST DATA
     random_nums_used = []
     test_loader = []
@@ -82,9 +82,29 @@ def main():
         while rannum in random_nums_used:
             rannum = torch.randint(low=0, high=12500, size=(1,)).item()
         random_nums_used.append(rannum)
-        test_cat = process_image("kaggle_data/test/cat." + str(rannum) + ".jpg")
-        test_dog = process_image("kaggle_data/test/dog." + str(rannum) + ".jpg")
-        test_loader.extend([(test_cat, [0, 1]), (test_dog, [1, 0])]) 
+        test_img = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
+        # test_dog = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
+        # test_loader.extend([(test_cat, [0, 1]), (test_dog, [1, 0])]) 
+        # load the label with pands
+        if label == 0:
+            ohv = [0,1]
+        else: 
+            ohv = [1,0]
+        test_loader.extend([test_img,ohv])
+    for i in range(99):
+        rannum = torch.randint(low=0, high=12500, size=(1,)).item()
+        while rannum in random_nums_used:
+            rannum = torch.randint(low=0, high=12500, size=(1,)).item()
+        random_nums_used.append(rannum)
+        test_img = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
+        # test_dog = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
+        # test_loader.extend([(test_cat, [0, 1]), (test_dog, [1, 0])]) 
+        # load the label with pands
+        if label == 0:
+            ohv = [0,1]
+        else: 
+            ohv = [1,0]
+        test_loader.extend([test_img,ohv])
 
     # FINE-TUNE MODEL 
     # Load the pre-trained ResNet-50 model
