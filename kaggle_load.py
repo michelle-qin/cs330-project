@@ -15,12 +15,19 @@ from torchvision import models, transforms
 
 def resnet_code(image_path):
     model = models.resnet50(pretrained=True) 
+    for param in model.parameters():
+        param.requires_grad = False
+    num_ftrs = model.fc.in_features
+    model.fc = torch.nn.Linear(num_ftrs, 2)
+    for param in model.fc.parameters():
+        param.requires_grad = True
+
     model.eval() 
     # Load and preprocess an image 
     img = Image.open(image_path) 
     preprocess = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), ])
     img_tensor = preprocess(img) 
-    img_tensor = torch.unsqueeze(img_tensor, 0)
+    # img_tensor = torch.unsqueeze(img_tensor, 0)
     
 
 
