@@ -11,6 +11,10 @@ from PIL import Image
 import io
 import numpy as np
 
+STRATEGY = "RANDOM"
+# STRATEGY = "BASELINE"
+# STRATEGY = "TEXT"
+
 
 def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
     # If a GPU is available, move the model to GPU
@@ -72,8 +76,6 @@ def eval_model(model, test_loader):
 
 
 def process_image(image):
-    # Load and preprocess an image
-    # img = Image.open(image_path)
     preprocess = transforms.Compose(
         [
             transforms.Resize((224, 224)),
@@ -108,26 +110,15 @@ def supplement_with_laion(train_dict, num_supplement=20):
 
             image_path = pet_images[rannum]["url"]
             print("IMAGE PATH: ", image_path)
-            # response = requests.get(image_path)
-            # print(response)
             try:
                 response = requests.get(image_path)
-                print("RESPONSE: ", response)
-                print("RESPONSE STATUS: ", response.status_code)
                 if response.status_code == 200:
                     try:
-                        print("WE ARE HERE")
                         image = Image.open(io.BytesIO(response.content))
-                        # image_array = np.asarray(image)
-                        # print("IMAGE ARRAY 1: ", image_array)
                         image_array = process_image(image)
-                        print("IMAGE ARRAY: ", image_array)
                         supplement_dict[pet_name].append(
                             (image_array, train_dict[pet_name])
                         )
-                        print(supplement_dict[pet_name])
-                        print(len(supplement_dict[pet_name]))
-                        print("done")
                     except error as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
@@ -154,9 +145,10 @@ def main():
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
 
     # SUPPLEMENT DATA
-    supplement_data = supplement_with_laion(train_dict)
-    for pet_name in train_dict.keys():
-        train_loader.extend(supplement_data[pet_name])
+    if STRATEGY == "RANDOM":
+        supplement_data = supplement_with_laion(train_dict)
+        for pet_name in train_dict.keys():
+            train_loader.extend(supplement_data[pet_name])
 
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
