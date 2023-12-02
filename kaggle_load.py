@@ -3,9 +3,16 @@ import torch
 from torch import optim
 from PIL import Image
 import torch.nn as nn
-from torchvision import models, transforms 
-    
-def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
+from torchvision import models, transforms
+import pandas as pd
+from clip_retrieval.clip_client import ClipClient
+import requests
+from PIL import Image
+import io
+import numpy as np
+
+
+def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
     # If a GPU is available, move the model to GPU
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -19,7 +26,9 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
         # Iterate over the training data
         for inputs, labels in train_loader:
             # Move inputs and labels to the same device as the model
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs, labels = inputs.unsqueeze(dim=0).to(device), torch.tensor(
+                labels
+            ).to(device)
 
             # Zero the parameter gradients
             optimizer.zero_grad()
@@ -27,6 +36,7 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
             # Forward pass
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
+            print(preds, labels)
             loss = criterion(outputs, labels)
 
             # Backward pass and optimize
@@ -35,78 +45,136 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=25):
 
             # Statistics
             running_loss += loss.item() * inputs.size(0)
-            running_corrects += torch.sum(preds == labels.data)
+            running_corrects += torch.sum(preds == labels)
 
-        epoch_loss = running_loss / len(train_loader.dataset)
-        epoch_acc = running_corrects.double() / len(train_loader.dataset)
+        epoch_loss = running_loss / len(train_loader)
+        epoch_acc = running_corrects.double() / len(train_loader)
 
-        print(f'Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+        print(
+            f"Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Train_Acc: {epoch_acc:.4f}"
+        )
 
     return model
+
 
 def eval_model(model, test_loader):
     running_corrects = 0
     with torch.no_grad():
-        for inputs, labels in test_loader: 
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            running_corrects += torch.sum(preds == labels.data)
-    total_acc = running_corrects.double() / len(test_loader.dataset)
-    print(f'Eval Accuracy: {total_acc}')
+            print(preds, labels)
+            print(preds == labels)
+            running_corrects += torch.sum(preds == labels)
+    total_acc = running_corrects.double() / len(test_loader)
+    print(f"Eval Accuracy: {total_acc}")
 
-def process_image(image_path):
-    # Load and preprocess an image 
-    img = Image.open(image_path) 
-    preprocess = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), ])
-    img_tensor = preprocess(img) # (3, 224, 224)
+
+def process_image(image):
+    # Load and preprocess an image
+    # img = Image.open(image_path)
+    preprocess = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    img_tensor = preprocess(image)  # (3, 224, 224)
     return img_tensor
 
+
+def supplement_with_laion(train_dict, num_supplement=20):
+    client = ClipClient(
+        url="https://knn.laion.ai/knn-service",
+        indice_name="laion5B-L-14",
+        num_images=500,
+    )
+    supplement_dict = {}
+    for pet_name in train_dict.keys():
+        pet_images = client.query(text="an image of a " + pet_name)
+        num_pet_images = len(pet_images)
+        print("num_pet_images", num_pet_images)
+
+        random_nums_used = []
+        supplement_dict[pet_name] = []
+        while len(supplement_dict[pet_name]) < num_supplement:
+            # GET A RANDOM IMAGE
+            rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
+            while rannum in random_nums_used:
+                rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
+            random_nums_used.append(rannum)
+
+            image_path = pet_images[rannum]["url"]
+            print("IMAGE PATH: ", image_path)
+            # response = requests.get(image_path)
+            # print(response)
+            try:
+                response = requests.get(image_path)
+                print("RESPONSE: ", response)
+                print("RESPONSE STATUS: ", response.status_code)
+                if response.status_code == 200:
+                    try:
+                        print("WE ARE HERE")
+                        image = Image.open(io.BytesIO(response.content))
+                        # image_array = np.asarray(image)
+                        # print("IMAGE ARRAY 1: ", image_array)
+                        image_array = process_image(image)
+                        print("IMAGE ARRAY: ", image_array)
+                        supplement_dict[pet_name].append(
+                            (image_array, train_dict[pet_name])
+                        )
+                        print(supplement_dict[pet_name])
+                        print(len(supplement_dict[pet_name]))
+                        print("done")
+                    except error as e:
+                        print("Issue with getting image: ", e)
+            except requests.exceptions.RequestException as e:
+                print("FAIL")
+
+    return supplement_dict
+
+
 def main():
-    # CREATE INITIAL DATA 
+    # CREATE INITIAL DATA
     # TRAIN DATA
-    #test 12500, dog 12499, cat 12499r
+    # test 12500, dog 12499, cat 12499r
     cat_num = torch.randint(low=0, high=12499, size=(1,)).item()
     dog_num = torch.randint(low=0, high=12499, size=(1,)).item()
 
-    train_cat = process_image("kaggle_data/train/cat." + str(cat_num) + ".jpg")
-    train_dog = process_image("kaggle_data/train/dog." + str(dog_num) + ".jpg")
-    
+    img_cat = Image.open("kaggle_data/train/cat." + str(cat_num) + ".jpg")
+    img_dog = Image.open("kaggle_data/train/dog." + str(dog_num) + ".jpg")
+    train_cat = process_image(img_cat)
+    train_dog = process_image(img_dog)
+
     train_data = [train_cat, train_dog]
-    train_labels = [[0, 1], [1, 0]]
+    train_dict = {"cat": [0], "dog": [1]}
+    train_labels = [[0], [1]]
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
+
+    # SUPPLEMENT DATA
+    supplement_data = supplement_with_laion(train_dict)
+    for pet_name in train_dict.keys():
+        train_loader.extend(supplement_data[pet_name])
+
     # TEST DATA
-    random_nums_used = []
+    random_nums_used = [cat_num, dog_num]
     test_loader = []
     for i in range(99):
         rannum = torch.randint(low=0, high=12500, size=(1,)).item()
         while rannum in random_nums_used:
             rannum = torch.randint(low=0, high=12500, size=(1,)).item()
         random_nums_used.append(rannum)
-        test_img = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
-        # test_dog = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
-        # test_loader.extend([(test_cat, [0, 1]), (test_dog, [1, 0])]) 
-        # load the label with pands
-        if label == 0:
-            ohv = [0,1]
-        else: 
-            ohv = [1,0]
-        test_loader.extend([test_img,ohv])
-    for i in range(99):
-        rannum = torch.randint(low=0, high=12500, size=(1,)).item()
-        while rannum in random_nums_used:
-            rannum = torch.randint(low=0, high=12500, size=(1,)).item()
-        random_nums_used.append(rannum)
-        test_img = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
-        # test_dog = process_image("kaggle_data/test/" + str(rannum) + ".jpg")
-        # test_loader.extend([(test_cat, [0, 1]), (test_dog, [1, 0])]) 
-        # load the label with pands
-        if label == 0:
-            ohv = [0,1]
-        else: 
-            ohv = [1,0]
-        test_loader.extend([test_img,ohv])
 
-    # FINE-TUNE MODEL 
+        img_cat = Image.open("kaggle_data/train/cat." + str(rannum) + ".jpg")
+        img_dog = Image.open("kaggle_data/train/dog." + str(rannum) + ".jpg")
+        test_cat = process_image(img_cat)
+        test_dog = process_image(img_dog)
+        test_loader.extend([(test_cat, [0]), (test_dog, [1])])
+
+    # FINE-TUNE MODEL
+    # CREATE THE MODEL
     # Load the pre-trained ResNet-50 model
     model = models.resnet50(pretrained=True)
 
@@ -123,13 +191,13 @@ def main():
     # Enable gradient computation for the newly created layer
     for param in model.fc.parameters():
         param.requires_grad = True
-    
+
     # Define Loss Function and Optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
 
     # TRAIN THE MODEL
-    trained_model = train_model(model, train_loader, criterion, optimizer, num_epochs=25)
+    trained_model = train_model(model, train_loader, criterion, optimizer, num_epochs=5)
 
     # EVALUATE THE MODEL
     eval_model(trained_model, test_loader)
