@@ -155,18 +155,22 @@ def main():
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
 
     # SUPPLEMENT DATA
-    if STRATEGY == "RANDOM":
-        supplement_data = random_supplement_with_laion(train_dict)
+    if STRATEGY == "BASELINE": 
+        pass
+    else:
+        if STRATEGY == "RANDOM":
+            supplement_data = random_supplement_with_laion(train_dict)
+        elif STRATEGY == "TEXT_RETRIEVAL":
+            # MICHELLE TO DO
+            pass
+        elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
+            # KATE TO DO
+            pass
+        elif STRATEGY == "CONTENT":
+            # STEPHAN TO DO
+            pass
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
-    elif STRATEGY == "TEXT_RETRIEVAL:
-        # MICHELLE TO DO
-    elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
-        # KATE TO DO
-    elif STRATEGY == "CONTENT":
-        # STEPHAN TO DO
-    else: 
-        # Do nothing, this is the base case 
         
 
     # TEST DATA
