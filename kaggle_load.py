@@ -15,7 +15,7 @@ STRATEGY = "RANDOM"
 # STRATEGY = "BASELINE"
 # STRATEGY = "TEXT_RETRIEVEL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
-# STRATEGY = "SEMANTIC"
+# STRATEGY = "CONTENT"
 
 
 def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
@@ -94,7 +94,7 @@ def text_supplement_with_laion(train_dict, num_supplement=20):
 def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
     # KATE
     
-def semantics_supplement_with_laion(train_dict, num_supplement=20):
+def content_supplement_with_laion(train_dict, num_supplement=20):
     # STEPHAN
 
 def random_supplement_with_laion(train_dict, num_supplement=20):
@@ -163,7 +163,7 @@ def main():
         # MICHELLE TO DO
     elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
         # KATE TO DO
-    elif STRATEGY == "SEMANTIC":
+    elif STRATEGY == "CONTENT":
         # STEPHAN TO DO
     else: 
         # Do nothing, this is the base case 
