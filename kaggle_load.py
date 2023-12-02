@@ -13,7 +13,9 @@ import numpy as np
 
 STRATEGY = "RANDOM"
 # STRATEGY = "BASELINE"
-# STRATEGY = "TEXT"
+# STRATEGY = "TEXT_RETRIEVEL"
+# STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
+# STRATEGY = "SEMANTIC"
 
 
 def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
@@ -86,8 +88,16 @@ def process_image(image):
     img_tensor = preprocess(image)  # (3, 224, 224)
     return img_tensor
 
+def text_supplement_with_laion(train_dict, num_supplement=20):
+    # MICHELLE
 
-def supplement_with_laion(train_dict, num_supplement=20):
+def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
+    # KATE
+    
+def semantics_supplement_with_laion(train_dict, num_supplement=20):
+    # STEPHAN
+
+def random_supplement_with_laion(train_dict, num_supplement=20):
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
         indice_name="laion5B-L-14",
@@ -146,9 +156,18 @@ def main():
 
     # SUPPLEMENT DATA
     if STRATEGY == "RANDOM":
-        supplement_data = supplement_with_laion(train_dict)
+        supplement_data = random_supplement_with_laion(train_dict)
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
+    elif STRATEGY == "TEXT_RETRIEVAL:
+        # MICHELLE TO DO
+    elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
+        # KATE TO DO
+    elif STRATEGY == "SEMANTIC":
+        # STEPHAN TO DO
+    else: 
+        # Do nothing, this is the base case 
+        
 
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
