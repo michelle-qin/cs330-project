@@ -3,6 +3,7 @@ import torch
 from torch import optim
 from PIL import Image
 import torch.nn as nn
+import clip
 from torchvision import models, transforms
 import pandas as pd
 from clip_retrieval.clip_client import ClipClient
@@ -16,11 +17,10 @@ from torchmetrics.functional.image.lpips import (
     learned_perceptual_image_patch_similarity,
 )
 
-# STRATEGY = "RANDOM"
-STRATEGY = "BASELINE"
+STRATEGY = "RANDOM"
+# STRATEGY = "BASELINE"
 # STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
-# STRATEGY = "CONTENT"
 
 
 class CustomResNet(nn.Module):
@@ -93,18 +93,42 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
     return model
 
 
+# def eval_model(model, test_loader):
+#     running_corrects = 0
+#     with torch.no_grad():
+#         for inputs, labels in test_loader:
+#             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
+#             outputs = model(inputs)
+#             _, preds = torch.max(outputs, 1)
+#             print(preds, labels)
+#             print(preds == labels)
+#             running_corrects += torch.sum(preds == labels)
+#     total_acc = running_corrects.double() / len(test_loader)
+#     print(f"Eval Accuracy: {total_acc}")
+
+
 def eval_model(model, test_loader):
+    model.eval()  # Set the model to evaluation mode
+
     running_corrects = 0
+    total_samples = 0
+
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
+            print("INPUTS: ", inputs)
+            print("LABELS: ", labels)
+
             outputs = model(inputs)
+            print("OUTPUTS: ", outputs)
             _, preds = torch.max(outputs, 1)
-            print(preds, labels)
-            print(preds == labels)
-            running_corrects += torch.sum(preds == labels)
-    total_acc = running_corrects.double() / len(test_loader)
-    print(f"Eval Accuracy: {total_acc}")
+            print("PREDS: ", preds)
+            print("LABELS: ", labels)
+            running_corrects += torch.sum(preds == labels.data)
+            total_samples += labels.size(0)
+
+    total_acc = running_corrects.double() / total_samples
+    print(f"Eval Accuracy: {total_acc:.4f}")
 
 
 def process_image(image):
@@ -181,9 +205,56 @@ def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
     return supplement_dict
 
 
-def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
-    # KATE
-    pass
+def get_image_emb(image):
+    model, preprocess = clip.load("ViT-L/14", device="cpu", jit=True)
+    with torch.no_grad():
+        image_emb = model.encode_image(preprocess(image).unsqueeze(0).to("cpu"))
+        image_emb /= image_emb.norm(dim=-1, keepdim=True)
+        image_emb = image_emb.cpu().detach().numpy().astype("float32")[0]
+        return image_emb
+
+
+def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_supplement=20):
+    client = ClipClient(
+        url="https://knn.laion.ai/knn-service",
+        indice_name="laion5B-L-14",
+        num_images=500,
+    )
+    cat_embed = get_image_emb(img_cat)
+    dog_embed = get_image_emb(img_dog)
+
+    supplement_dict = {}
+    for pet_name in train_dict.keys():
+        print(cat_embed)
+        print(cat_embed.shape)
+        if pet_name == "cat":
+            pet_images = client.query(embedding_input=cat_embed.tolist())
+        else:
+            pet_images = client.query(embedding_input=dog_embed.tolist())
+        num_pet_images = len(pet_images)
+        print("num_pet_images", num_pet_images)
+        supplement_dict[pet_name] = []
+        i = 0
+        while len(supplement_dict[pet_name]) < num_supplement:
+            image_path = pet_images[i]["url"]
+            print("IMAGE PATH: ", image_path)
+            try:
+                response = requests.get(image_path)
+                if response.status_code == 200:
+                    try:
+                        image = Image.open(io.BytesIO(response.content))
+                        image_array = process_image(image)
+                        supplement_dict[pet_name].append(
+                            (image_array, train_dict[pet_name])
+                        )
+                        print(len(supplement_dict[pet_name]))
+                    except Exception as e:
+                        print("Issue with getting image: ", e)
+            except requests.exceptions.RequestException as e:
+                print("FAIL")
+            i += 1
+
+    return supplement_dict
 
 
 def content_supplement_with_laion(
@@ -311,7 +382,9 @@ def main():
             supplement_data = text_supplement_with_laion(unprocessed_train_loader)
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
-            pass
+            supplement_data = semantic_NN_supplement_with_laion(
+                train_dict, img_cat, img_dog
+            )
         elif STRATEGY == "CONTENT":
             source_data = {"cat": train_data[0], "dog": train_data[1]}
             supplement_data = content_supplement_with_laion(train_dict, source_data)
