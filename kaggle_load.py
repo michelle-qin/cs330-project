@@ -11,6 +11,7 @@ import requests
 from PIL import Image
 import io
 import numpy as np
+from torchmetrics.functional.image.lpips import learned_perceptual_image_patch_similarity
 
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from torchmetrics.functional.image.lpips import (
@@ -191,162 +192,10 @@ def process_image(image):
     return img_tensor
 
 
-def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
-    # MICHELLE
-    # TO DO TRY IMAGES WITHOUT PROCESSING
-    client = ClipClient(
-        url="https://knn.laion.ai/knn-service",
-        indice_name="laion5B-L-14",
-        num_images=500,
-    )
-    supplement_dict = {}
-    # supplement_data key: pet_name, value: list of (image, label) tuples
-
-    # Image Captioning Model
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained(
-        "Salesforce/blip-image-captioning-base"
-    )
-
-    def generate_caption(image):
-        inputs = processor(text=None, images=image, return_tensors="pt", padding=True)
-        outputs = model.generate(**inputs)
-        caption = processor.decode(outputs[0], skip_special_tokens=True)
-        print("CAPTION: ", caption)
-        return caption
-
-    for sample in unprocessed_train_loader:
-        img = sample[0]
-        label = sample[1]
-        if label == 0:
-            pet_name = "cat"
-        else:
-            pet_name = "dog"
-        caption = generate_caption(img)
-
-        pet_images = client.query(text=caption)
-        num_pet_images = len(pet_images)
-
-        random_nums_used = []
-        supplement_dict[pet_name] = []
-        while len(supplement_dict[pet_name]) < num_supplement:
-            # GET A RANDOM IMAGE
-            rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
-            while rannum in random_nums_used:
-                rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
-            random_nums_used.append(rannum)
-
-            image_path = pet_images[rannum]["url"]
-            print("IMAGE PATH: ", image_path)
-            try:
-                response = requests.get(image_path)
-                if response.status_code == 200:
-                    try:
-                        image = Image.open(io.BytesIO(response.content))
-                        image_array = process_image(image)
-                        supplement_dict[pet_name].append((image_array, [label]))
-                    except Exception as e:
-                        print("Issue with getting image: ", e)
-            except requests.exceptions.RequestException as e:
-                print("FAIL")
-    print(supplement_dict)
-    return supplement_dict
-
-
-def get_image_emb(image):
-    model, preprocess = clip.load("ViT-L/14", device="cpu", jit=True)
-    with torch.no_grad():
-        image_emb = model.encode_image(preprocess(image).unsqueeze(0).to("cpu"))
-        image_emb /= image_emb.norm(dim=-1, keepdim=True)
-        image_emb = image_emb.cpu().detach().numpy().astype("float32")[0]
-        return image_emb
-
-
-def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_supplement=20):
-    client = ClipClient(
-        url="https://knn.laion.ai/knn-service",
-        indice_name="laion5B-L-14",
-        num_images=500,
-    )
-    cat_embed = get_image_emb(img_cat)
-    dog_embed = get_image_emb(img_dog)
-
-    supplement_dict = {}
-    for pet_name in train_dict.keys():
-        print(cat_embed)
-        print(cat_embed.shape)
-        if pet_name == "cat":
-            pet_images = client.query(embedding_input=cat_embed.tolist())
-        else:
-            pet_images = client.query(embedding_input=dog_embed.tolist())
-        num_pet_images = len(pet_images)
-        print("num_pet_images", num_pet_images)
-        supplement_dict[pet_name] = []
-        i = 0
-        while len(supplement_dict[pet_name]) < num_supplement:
-            image_path = pet_images[i]["url"]
-            print("IMAGE PATH: ", image_path)
-            try:
-                response = requests.get(image_path)
-                if response.status_code == 200:
-                    try:
-                        image = Image.open(io.BytesIO(response.content))
-                        image_array = process_image(image)
-                        supplement_dict[pet_name].append(
-                            (image_array, train_dict[pet_name])
-                        )
-                        print(len(supplement_dict[pet_name]))
-                    except Exception as e:
-                        print("Issue with getting image: ", e)
-            except requests.exceptions.RequestException as e:
-                print("FAIL")
-            i += 1
-
-    return supplement_dict
-
-
-def diverse_supplement_with_laion(train_dict, num_supplement=20):
-    client = ClipClient(
-        url="https://knn.laion.ai/knn-service",
-        indice_name="laion5B-L-14",
-    )
-    supplement_dict = {}
-    for pet_name in train_dict.keys():
-        diverse_names = diverse_breeds[pet_name]
-        supplement_dict[pet_name] = []
-        for i in range(len(diverse_names)):
-            pet_image = client.query(text="an image of a " + diverse_names[i])
-            print('hello', diverse_names[i])
-            num_pet_images = len(pet_image)
-            print(num_pet_images)
-            index = 0
-            accepted = False
-            
-            while not accepted:
-                image_path = pet_image[index]["url"]
-                print("IMAGE PATH: ", image_path)
-                try:
-                    response = requests.get(image_path)
-                    if response.status_code == 200:
-                        try:
-                            image = Image.open(io.BytesIO(response.content))
-                            
-                            image_array = process_image(image)
-                            
-                            supplement_dict[pet_name].append(
-                                (image_array, train_dict[pet_name])
-                            )
-                            accepted = True
-                        except Exception as e:
-                            print("Issue with getting image: ", e)
-                except requests.exceptions.RequestException as e:
-                    print("FAIL")
-                index += 1
-    return supplement_dict
-
-def content_supplement_with_laion(
-    train_dict, source_data, num_supplement=20, approach="closest"
-):
+def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
+    # KATE
+    
+def content_supplement_with_laion(train_dict, source_data, num_supplement=20, approach = "closest"):
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
         indice_name="laion5B-L-14",
@@ -360,7 +209,7 @@ def content_supplement_with_laion(
         intermediate_hund = []
         scores = []
         for i in range(100):
-            # while len(supplement_dict[pet_name]) < num_supplement:
+        # while len(supplement_dict[pet_name]) < num_supplement:
             image_path = pet_images[i]["url"]
             print("IMAGE PATH: ", image_path)
             try:
@@ -369,23 +218,17 @@ def content_supplement_with_laion(
                     try:
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
-                        min_im_ar = image_array.min()
-                        max_im_ar = image_array.max()
-                        normalized_tensor = torch.nn.functional.normalize(
-                            image_array - min_im_ar, p=float("inf"), dim=0
+                        intermediate_hund.append(
+                            (image_array, train_dict[pet_name])
                         )
-                        image_array = normalized_tensor * (max_im_ar - min_im_ar)
-                        intermediate_hund.append((image_array, train_dict[pet_name]))
                         scores.append(
-                            learned_perceptual_image_patch_similarity(
-                                source_im, image_array, net_type="squeeze"
-                            )
+                            learned_perceptual_image_patch_similarity(source_im, image_array, net_type='squeeze')
                         )
-                    except Exception as e:
+                    except error as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
                 print("FAIL")
-
+        
         scores = torch.tensor(scores)
         if approach == "furthest":
             best_k = torch.topk(scores, num_supplement)
@@ -397,7 +240,6 @@ def content_supplement_with_laion(
         supplement_dict[pet_name] = final_tw
 
     return supplement_dict
-
 
 def random_supplement_with_laion(train_dict, num_supplement=20):
     client = ClipClient(
@@ -458,28 +300,18 @@ def main():
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
 
     # SUPPLEMENT DATA
-    print("USING STRATEGY: ", STRATEGY)
-    if STRATEGY == "BASELINE":
-        pass
-    else:
-        # supplement_data key: pet_name, value: list of (image, label) tuples
-        if STRATEGY == "RANDOM":
-            supplement_data = random_supplement_with_laion(train_dict)
-        elif STRATEGY == "TEXT_RETRIEVAL":
-            supplement_data = text_supplement_with_laion(unprocessed_train_loader)
-        elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
-            # KATE TO DO
-            supplement_data = semantic_NN_supplement_with_laion(
-                train_dict, img_cat, img_dog
-            )
-        elif STRATEGY == "DIVERSE_IMAGES":
-            # KATE TO DO
-            supplement_data = diverse_supplement_with_laion(
-                train_dict)
-        elif STRATEGY == "CONTENT":
-            source_data = {"cat": train_data[0], "dog": train_data[1]}
-            supplement_data = content_supplement_with_laion(train_dict, source_data)
-        for pet_name in train_dict.keys():
+    if STRATEGY == "RANDOM":
+        supplement_data = random_supplement_with_laion(train_dict)
+    elif STRATEGY == "TEXT_RETRIEVAL:
+        # MICHELLE TO DO
+    elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
+        # KATE TO DO
+    elif STRATEGY == "CONTENT":
+        source_data = {"cat": train_data[0], "dog": train_data[1]}
+        supplement_data = content_supplement_with_laion(train_dict, source_data)
+    else: 
+        # Do nothing, this is the base case 
+    for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
 
     # TEST DATA
