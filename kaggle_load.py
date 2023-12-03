@@ -11,9 +11,11 @@ from PIL import Image
 import io
 import numpy as np
 
-STRATEGY = "RANDOM"
+from transformers import BlipProcessor, BlipForConditionalGeneration
+
+# STRATEGY = "RANDOM"
 # STRATEGY = "BASELINE"
-# STRATEGY = "TEXT_RETRIEVEL"
+STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
 # STRATEGY = "CONTENT"
 
@@ -88,14 +90,78 @@ def process_image(image):
     img_tensor = preprocess(image)  # (3, 224, 224)
     return img_tensor
 
-def text_supplement_with_laion(train_dict, num_supplement=20):
+
+def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
     # MICHELLE
+    # TO DO TRY IMAGES WITHOUT PROCESSING
+    client = ClipClient(
+        url="https://knn.laion.ai/knn-service",
+        indice_name="laion5B-L-14",
+        num_images=500,
+    )
+    supplement_dict = {}
+    # supplement_data key: pet_name, value: list of (image, label) tuples
+
+    # Image Captioning Model
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained(
+        "Salesforce/blip-image-captioning-base"
+    )
+
+    def generate_caption(image):
+        inputs = processor(text=None, images=image, return_tensors="pt", padding=True)
+        outputs = model.generate(**inputs)
+        caption = processor.decode(outputs[0], skip_special_tokens=True)
+        print("CAPTION: ", caption)
+        return caption
+
+    for sample in unprocessed_train_loader:
+        img = sample[0]
+        label = sample[1]
+        if label == 0:
+            pet_name = "cat"
+        else:
+            pet_name = "dog"
+        caption = generate_caption(img)
+
+        pet_images = client.query(text=caption)
+        num_pet_images = len(pet_images)
+
+        random_nums_used = []
+        supplement_dict[pet_name] = []
+        while len(supplement_dict[pet_name]) < num_supplement:
+            # GET A RANDOM IMAGE
+            rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
+            while rannum in random_nums_used:
+                rannum = torch.randint(low=0, high=num_pet_images - 1, size=(1,)).item()
+            random_nums_used.append(rannum)
+
+            image_path = pet_images[rannum]["url"]
+            print("IMAGE PATH: ", image_path)
+            try:
+                response = requests.get(image_path)
+                if response.status_code == 200:
+                    try:
+                        image = Image.open(io.BytesIO(response.content))
+                        image_array = process_image(image)
+                        supplement_dict[pet_name].append((image_array, [label]))
+                    except Exception as e:
+                        print("Issue with getting image: ", e)
+            except requests.exceptions.RequestException as e:
+                print("FAIL")
+    print(supplement_dict)
+    return supplement_dict
+
 
 def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
     # KATE
-    
+    pass
+
+
 def content_supplement_with_laion(train_dict, num_supplement=20):
     # STEPHAN
+    pass
+
 
 def random_supplement_with_laion(train_dict, num_supplement=20):
     client = ClipClient(
@@ -129,7 +195,7 @@ def random_supplement_with_laion(train_dict, num_supplement=20):
                         supplement_dict[pet_name].append(
                             (image_array, train_dict[pet_name])
                         )
-                    except error as e:
+                    except Exception as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
                 print("FAIL")
@@ -152,17 +218,19 @@ def main():
     train_data = [train_cat, train_dog]
     train_dict = {"cat": [0], "dog": [1]}
     train_labels = [[0], [1]]
+    unprocessed_train_loader = [(img_cat, 0), (img_dog, 1)]
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
 
     # SUPPLEMENT DATA
-    if STRATEGY == "BASELINE": 
+    print("USING STRATEGY: ", STRATEGY)
+    if STRATEGY == "BASELINE":
         pass
     else:
+        # supplement_data key: pet_name, value: list of (image, label) tuples
         if STRATEGY == "RANDOM":
             supplement_data = random_supplement_with_laion(train_dict)
         elif STRATEGY == "TEXT_RETRIEVAL":
-            # MICHELLE TO DO
-            pass
+            supplement_data = text_supplement_with_laion(unprocessed_train_loader)
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
             pass
@@ -171,7 +239,6 @@ def main():
             pass
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
-        
 
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
