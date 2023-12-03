@@ -12,12 +12,40 @@ import io
 import numpy as np
 
 from transformers import BlipProcessor, BlipForConditionalGeneration
+from torchmetrics.functional.image.lpips import (
+    learned_perceptual_image_patch_similarity,
+)
 
 # STRATEGY = "RANDOM"
-# STRATEGY = "BASELINE"
-STRATEGY = "TEXT_RETRIEVAL"
+STRATEGY = "BASELINE"
+# STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
 # STRATEGY = "CONTENT"
+
+
+class CustomResNet(nn.Module):
+    def __init__(self, num_classes=2):
+        super(CustomResNet, self).__init__()
+        # Load pre-trained ResNet50
+        self.resnet = models.resnet50(pretrained=True)
+        num_ftrs = self.resnet.fc.in_features
+        # Remove the last fully connected layer of the ResNet model
+        self.resnet.fc = nn.Identity()
+        # Freeze all layers
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+        # Replace the last fully connected layer
+        self.fc1 = nn.Linear(num_ftrs, 512)
+        self.fc2 = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        # Use the existing ResNet architecture up to the last layer
+        x = self.resnet(x)
+        # Apply the two new fully connected layers
+        x = self.fc1(x)
+        x = nn.ReLU()(x)  # You need a non-linear activation function here
+        x = self.fc2(x)
+        return x
 
 
 def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
@@ -158,9 +186,59 @@ def semantic_NN_supplement_with_laion(train_dict, num_supplement=20):
     pass
 
 
-def content_supplement_with_laion(train_dict, num_supplement=20):
-    # STEPHAN
-    pass
+def content_supplement_with_laion(
+    train_dict, source_data, num_supplement=20, approach="closest"
+):
+    client = ClipClient(
+        url="https://knn.laion.ai/knn-service",
+        indice_name="laion5B-L-14",
+        num_images=500,
+    )
+    supplement_dict = {}
+    for pet_name in train_dict.keys():
+        pet_images = client.query(text="an image of a " + pet_name)
+        num_pet_images = len(pet_images)
+        source_im = source_data[pet_name]
+        intermediate_hund = []
+        scores = []
+        for i in range(100):
+            # while len(supplement_dict[pet_name]) < num_supplement:
+            image_path = pet_images[i]["url"]
+            print("IMAGE PATH: ", image_path)
+            try:
+                response = requests.get(image_path)
+                if response.status_code == 200:
+                    try:
+                        image = Image.open(io.BytesIO(response.content))
+                        image_array = process_image(image)
+                        min_im_ar = image_array.min()
+                        max_im_ar = image_array.max()
+                        normalized_tensor = torch.nn.functional.normalize(
+                            image_array - min_im_ar, p=float("inf"), dim=0
+                        )
+                        image_array = normalized_tensor * (max_im_ar - min_im_ar)
+                        intermediate_hund.append((image_array, train_dict[pet_name]))
+                        scores.append(
+                            learned_perceptual_image_patch_similarity(
+                                source_im, image_array, net_type="squeeze"
+                            )
+                        )
+                    except Exception as e:
+                        print("Issue with getting image: ", e)
+            except requests.exceptions.RequestException as e:
+                print("FAIL")
+
+        scores = torch.tensor(scores)
+        if approach == "furthest":
+            best_k = torch.topk(scores, num_supplement)
+        elif approach == "closest":
+            best_k = torch.argsort(scores)[:num_supplement]
+        intermediate_hund = torch.cat(intermediate_hund)
+        final_tw = intermediate_hund[best_k]
+
+        supplement_dict[pet_name] = final_tw
+
+    return supplement_dict
 
 
 def random_supplement_with_laion(train_dict, num_supplement=20):
@@ -235,8 +313,8 @@ def main():
             # KATE TO DO
             pass
         elif STRATEGY == "CONTENT":
-            # STEPHAN TO DO
-            pass
+            source_data = {"cat": train_data[0], "dog": train_data[1]}
+            supplement_data = content_supplement_with_laion(train_dict, source_data)
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
 
@@ -257,26 +335,19 @@ def main():
 
     # FINE-TUNE MODEL
     # CREATE THE MODEL
-    # Load the pre-trained ResNet-50 model
-    model = models.resnet50(pretrained=True)
+    model = CustomResNet(num_classes=2)
 
-    # Freeze all layers
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Replace the last fully connected layer
-    # Number of features for the last layer
-    num_ftrs = model.fc.in_features
-    # Assuming you want the output to be of 10 classes
-    model.fc = nn.Linear(num_ftrs, 2)
-
-    # Enable gradient computation for the newly created layer
-    for param in model.fc.parameters():
+    # Enable gradient computation for the newly created layers
+    for param in model.fc1.parameters():
+        param.requires_grad = True
+    for param in model.fc2.parameters():
         param.requires_grad = True
 
     # Define Loss Function and Optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+    optimizer = optim.Adam(
+        list(model.fc1.parameters()) + list(model.fc2.parameters()), lr=0.001
+    )
 
     # TRAIN THE MODEL
     trained_model = train_model(model, train_loader, criterion, optimizer, num_epochs=5)
