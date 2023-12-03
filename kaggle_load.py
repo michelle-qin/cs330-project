@@ -17,11 +17,59 @@ from torchmetrics.functional.image.lpips import (
     learned_perceptual_image_patch_similarity,
 )
 
-STRATEGY = "RANDOM"
+#STRATEGY = "RANDOM"
 # STRATEGY = "BASELINE"
 # STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
+STRATEGY = "DIVERSE_IMAGES"
 
+cat_breeds = [
+    "Persian Cat",
+    "Siamese Cat",
+    "Maine Coon",
+    "Sphynx Cat",
+    "Bengal Cat",
+    "Scottish Fold",
+    "Ragdoll Cat",
+    "Burmese Cat",
+    "Abyssinian Cat",
+    "Russian Blue",
+    "Cornish Rex",
+    "Norwegian Forest Cat",
+    "Manx Cat",
+    "Egyptian Mau",
+    "Munchkin Cat",
+    "Turkish Van",
+    "Himalayan Cat",
+    "Chartreux Cat",
+    "Oriental Shorthair",
+    "American Shorthair"
+]
+
+dog_breeds = [
+    "Labrador Retriever",
+    "German Shepherd",
+    "Golden Retriever",
+    "Bulldog",
+    "Poodle",
+    "Beagle",
+    "Boxer",
+    "Dachshund",
+    "Siberian Husky",
+    "Great Dane",
+    "Shih Tzu",
+    "Chihuahua",
+    "Rottweiler",
+    "Doberman Pinscher",
+    "Pomeranian",
+    "Border Collie",
+    "King Charles Spaniel",
+    "Australian Shepherd",
+    "Pug",
+    "Dalmatian"
+]
+
+diverse_breeds = {'cat': cat_breeds, 'dog': dog_breeds}
 
 class CustomResNet(nn.Module):
     def __init__(self, num_classes=2):
@@ -257,6 +305,45 @@ def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_suppleme
     return supplement_dict
 
 
+def diverse_supplement_with_laion(train_dict, num_supplement=20):
+    client = ClipClient(
+        url="https://knn.laion.ai/knn-service",
+        indice_name="laion5B-L-14",
+    )
+    supplement_dict = {}
+    for pet_name in train_dict.keys():
+        diverse_names = diverse_breeds[pet_name]
+        supplement_dict[pet_name] = []
+        for i in range(len(diverse_names)):
+            pet_image = client.query(text="an image of a " + diverse_names[i])
+            print('hello', diverse_names[i])
+            num_pet_images = len(pet_image)
+            print(num_pet_images)
+            index = 0
+            accepted = False
+            
+            while not accepted:
+                image_path = pet_image[index]["url"]
+                print("IMAGE PATH: ", image_path)
+                try:
+                    response = requests.get(image_path)
+                    if response.status_code == 200:
+                        try:
+                            image = Image.open(io.BytesIO(response.content))
+                            
+                            image_array = process_image(image)
+                            
+                            supplement_dict[pet_name].append(
+                                (image_array, train_dict[pet_name])
+                            )
+                            accepted = True
+                        except Exception as e:
+                            print("Issue with getting image: ", e)
+                except requests.exceptions.RequestException as e:
+                    print("FAIL")
+                index += 1
+    return supplement_dict
+
 def content_supplement_with_laion(
     train_dict, source_data, num_supplement=20, approach="closest"
 ):
@@ -385,6 +472,10 @@ def main():
             supplement_data = semantic_NN_supplement_with_laion(
                 train_dict, img_cat, img_dog
             )
+        elif STRATEGY == "DIVERSE_IMAGES":
+            # KATE TO DO
+            supplement_data = diverse_supplement_with_laion(
+                train_dict)
         elif STRATEGY == "CONTENT":
             source_data = {"cat": train_data[0], "dog": train_data[1]}
             supplement_data = content_supplement_with_laion(train_dict, source_data)
