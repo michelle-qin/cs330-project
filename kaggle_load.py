@@ -10,7 +10,11 @@ from clip_retrieval.clip_client import ClipClient
 import requests
 from PIL import Image
 import io
+import os
 import numpy as np
+import argparse
+import random
+from torch.utils.tensorboard import SummaryWriter
 
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from torchmetrics.functional.image.lpips import (
@@ -21,7 +25,8 @@ from torchmetrics.functional.image.lpips import (
 # STRATEGY = "BASELINE"
 # STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
-STRATEGY = "DIVERSE_IMAGES"
+#STRATEGY = "DIVERSE_IMAGES"
+
 
 cat_breeds = [
     "Persian Cat",
@@ -74,30 +79,34 @@ diverse_breeds = {'cat': cat_breeds, 'dog': dog_breeds}
 class CustomResNet(nn.Module):
     def __init__(self, num_classes=2):
         super(CustomResNet, self).__init__()
-        # Load pre-trained ResNet50
-        self.resnet = models.resnet50(pretrained=True)
-        num_ftrs = self.resnet.fc.in_features
+        # Load pre-trained ResNet50--try changing to resnet18 w only one linear layer
+        self.resnet = models.resnet18(pretrained=True)
+        self.resnet.fc = nn.Linear(512, num_classes)
+        print('resnet', self.resnet)
+        
         # Remove the last fully connected layer of the ResNet model
-        self.resnet.fc = nn.Identity()
+        #self.resnet.fc = nn.Identity()
         # Freeze all layers
-        for param in self.resnet.parameters():
-            param.requires_grad = False
+        # for param in self.resnet.parameters():
+        #     param.requires_grad = False
+        # don't do this inside the class!
         # Replace the last fully connected layer
-        self.fc1 = nn.Linear(num_ftrs, 512)
-        self.fc2 = nn.Linear(512, num_classes)
+        #self.fc1 = nn.Linear(num_ftrs, num_classes)
 
     def forward(self, x):
         # Use the existing ResNet architecture up to the last layer
         x = self.resnet(x)
+        print(x.shape)
         # Apply the two new fully connected layers
-        x = self.fc1(x)
-        x = nn.ReLU()(x)  # You need a non-linear activation function here
-        x = self.fc2(x)
+        #x = self.fc1(x)
+        #x = nn.ReLU()(x)  # You need a non-linear activation function here
+        #x = self.fc2(x)
         return x
 
 
-def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
+def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1):
     # If a GPU is available, move the model to GPU
+    # probably the learning rate is too large
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -108,8 +117,11 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
         running_corrects = 0
 
         # Iterate over the training data
+        random.shuffle(train_loader)
         for inputs, labels in train_loader:
             # Move inputs and labels to the same device as the model
+            # batch size for resnet is a lot better and needs to be a really small learning rate
+            # should shuffle the cat and dogs!! and shuffle at every epoch!
             inputs, labels = inputs.unsqueeze(dim=0).to(device), torch.tensor(
                 labels
             ).to(device)
@@ -122,17 +134,21 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=1):
             _, preds = torch.max(outputs, 1)
             print(preds, labels)
             loss = criterion(outputs, labels)
+            print(loss)
 
             # Backward pass and optimize
             loss.backward()
             optimizer.step()
 
             # Statistics
-            running_loss += loss.item() * inputs.size(0)
+            running_loss += loss.item() 
+            # * inputs.size(0)
             running_corrects += torch.sum(preds == labels)
 
         epoch_loss = running_loss / len(train_loader)
         epoch_acc = running_corrects.double() / len(train_loader)
+        writer.add_scalar('training loss', epoch_loss, epoch)
+        writer.add_scalar('training accuracy', epoch_acc, epoch)
 
         print(
             f"Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Train_Acc: {epoch_acc:.4f}"
@@ -164,15 +180,15 @@ def eval_model(model, test_loader):
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
-            print("INPUTS: ", inputs)
-            print("LABELS: ", labels)
+            #print("INPUTS: ", inputs)
+            #print("LABELS: ", labels)
 
             outputs = model(inputs)
-            print("OUTPUTS: ", outputs)
-            _, preds = torch.max(outputs, 1)
-            print("PREDS: ", preds)
-            print("LABELS: ", labels)
-            running_corrects += torch.sum(preds == labels.data)
+            #print("OUTPUTS: ", outputs)
+            preds = torch.argmax(outputs)
+            #print("PREDS: ", preds)
+            #print("LABELS: ", labels)
+            running_corrects += torch.sum(preds == labels)
             total_samples += labels.size(0)
 
     total_acc = running_corrects.double() / total_samples
@@ -441,10 +457,14 @@ def random_supplement_with_laion(train_dict, num_supplement=20):
     return supplement_dict
 
 
-def main():
+def main(args):
     # CREATE INITIAL DATA
     # TRAIN DATA
     # test 12500, dog 12499, cat 12499r
+    log_dir = 'runs/' + args.strategy
+    os.makedirs(log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir)
+    
     cat_num = torch.randint(low=0, high=12499, size=(1,)).item()
     dog_num = torch.randint(low=0, high=12499, size=(1,)).item()
 
@@ -458,8 +478,9 @@ def main():
     train_labels = [[0], [1]]
     unprocessed_train_loader = [(img_cat, 0), (img_dog, 1)]
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
-
+    model = CustomResNet(num_classes=2)
     # SUPPLEMENT DATA
+    STRATEGY = args.strategy
     print("USING STRATEGY: ", STRATEGY)
     if STRATEGY == "BASELINE":
         pass
@@ -472,9 +493,8 @@ def main():
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
             supplement_data = semantic_NN_supplement_with_laion(
-                train_dict, img_cat, img_dog
-            )
-        elif STRATEGY == "DIVERSE_IMAGES":
+                train_dict, img_cat, img_dog)
+        elif STRATEGY == "DIVERSE":
             # KATE TO DO
             supplement_data = diverse_supplement_with_laion(
                 train_dict)
@@ -483,6 +503,7 @@ def main():
             supplement_data = content_supplement_with_laion(train_dict, source_data)
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
+            
 
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
@@ -501,26 +522,31 @@ def main():
 
     # FINE-TUNE MODEL
     # CREATE THE MODEL
-    model = CustomResNet(num_classes=2)
+    
+
 
     # Enable gradient computation for the newly created layers
-    for param in model.fc1.parameters():
-        param.requires_grad = True
-    for param in model.fc2.parameters():
-        param.requires_grad = True
+    # for param in model.fc1.parameters():
+    #     param.requires_grad = True
 
     # Define Loss Function and Optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(
-        list(model.fc1.parameters()) + list(model.fc2.parameters()), lr=0.001
-    )
+    # optimizer = optim.Adam(
+    #     list(model.fc1.parameters()) + list(model.fc2.parameters()), lr=0.0000001
+    # )
+    # model.resnet.fc.parameters()
+    optimizer = optim.Adam(list(model.resnet.fc.parameters()), lr=0.0001)
 
     # TRAIN THE MODEL
-    trained_model = train_model(model, train_loader, criterion, optimizer, num_epochs=5)
+    trained_model = train_model(model, train_loader, criterion, optimizer, writer, num_epochs=5)
 
     # EVALUATE THE MODEL
-    eval_model(trained_model, test_loader)
+    eval_model(trained_model, test_loader, writer)
 
 
-if __name__ == "__main__":
-    main()
+if __name__=='__main__':
+    parser = argparse.ArgumentParser()
+    strategies = ["BASELINE", "RANDOM", "TEXT_RETRIEVAL", "SEMANTIC_NEAREST_NEIGHBOR", "CONTENT", "DIVERSE"]
+    parser.add_argument('--strategy', type=str, default="BASELINE", choices=strategies, help="Choose a mode from the options: {}".format(", ".join(strategies)))
+    os.makedirs('runs', exist_ok=True)
+    main(parser.parse_args())
