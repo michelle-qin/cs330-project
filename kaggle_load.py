@@ -380,7 +380,7 @@ def content_supplement_with_laion(
                         source_im = source_im / max_abs
                         scores.append(
                             learned_perceptual_image_patch_similarity(
-                                source_im, image_array, net_type="squeeze"
+                                source_im.unsqueeze(dim=0), image_array.unsqueeze(dim=0), net_type="squeeze"
                             )
                         )
                     except Exception as e:
