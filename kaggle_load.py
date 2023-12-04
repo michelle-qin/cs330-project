@@ -385,7 +385,7 @@ def content_supplement_with_laion(
                     try:
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
-                        intermediate_hund.append(image_array)
+                        intermediate_hund.append(image_array.unsqueeze(dim=0))
                         max_abs = image_array.max()
                         if image_array.min() < 0:
                             max_abs = max(max_abs, -image_array.min())
