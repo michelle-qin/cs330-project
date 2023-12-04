@@ -21,11 +21,11 @@ from torchmetrics.functional.image.lpips import (
     learned_perceptual_image_patch_similarity,
 )
 
-#STRATEGY = "RANDOM"
+# STRATEGY = "RANDOM"
 # STRATEGY = "BASELINE"
 # STRATEGY = "TEXT_RETRIEVAL"
 # STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
-#STRATEGY = "DIVERSE_IMAGES"
+# STRATEGY = "DIVERSE_IMAGES"
 
 
 cat_breeds = [
@@ -48,7 +48,7 @@ cat_breeds = [
     "Himalayan Cat",
     "Chartreux Cat",
     "Oriental Shorthair",
-    "American Shorthair"
+    "American Shorthair",
 ]
 
 dog_breeds = [
@@ -71,10 +71,11 @@ dog_breeds = [
     "King Charles Spaniel",
     "Australian Shepherd",
     "Pug",
-    "Dalmatian"
+    "Dalmatian",
 ]
 
-diverse_breeds = {'cat': cat_breeds, 'dog': dog_breeds}
+diverse_breeds = {"cat": cat_breeds, "dog": dog_breeds}
+
 
 class CustomResNet(nn.Module):
     def __init__(self, num_classes=2):
@@ -82,25 +83,25 @@ class CustomResNet(nn.Module):
         # Load pre-trained ResNet50--try changing to resnet18 w only one linear layer
         self.resnet = models.resnet18(pretrained=True)
         self.resnet.fc = nn.Linear(512, num_classes)
-        print('resnet', self.resnet)
-        
+        print("resnet", self.resnet)
+
         # Remove the last fully connected layer of the ResNet model
-        #self.resnet.fc = nn.Identity()
+        # self.resnet.fc = nn.Identity()
         # Freeze all layers
         # for param in self.resnet.parameters():
         #     param.requires_grad = False
         # don't do this inside the class!
         # Replace the last fully connected layer
-        #self.fc1 = nn.Linear(num_ftrs, num_classes)
+        # self.fc1 = nn.Linear(num_ftrs, num_classes)
 
     def forward(self, x):
         # Use the existing ResNet architecture up to the last layer
         x = self.resnet(x)
         print(x.shape)
         # Apply the two new fully connected layers
-        #x = self.fc1(x)
-        #x = nn.ReLU()(x)  # You need a non-linear activation function here
-        #x = self.fc2(x)
+        # x = self.fc1(x)
+        # x = nn.ReLU()(x)  # You need a non-linear activation function here
+        # x = self.fc2(x)
         return x
 
 
@@ -141,14 +142,14 @@ def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1)
             optimizer.step()
 
             # Statistics
-            running_loss += loss.item() 
+            running_loss += loss.item()
             # * inputs.size(0)
             running_corrects += torch.sum(preds == labels)
 
         epoch_loss = running_loss / len(train_loader)
         epoch_acc = running_corrects.double() / len(train_loader)
-        writer.add_scalar('training loss', epoch_loss, epoch)
-        writer.add_scalar('training accuracy', epoch_acc, epoch)
+        writer.add_scalar("training loss", epoch_loss, epoch)
+        writer.add_scalar("training accuracy", epoch_acc, epoch)
 
         print(
             f"Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Train_Acc: {epoch_acc:.4f}"
@@ -180,14 +181,14 @@ def eval_model(model, test_loader):
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
-            #print("INPUTS: ", inputs)
-            #print("LABELS: ", labels)
+            # print("INPUTS: ", inputs)
+            # print("LABELS: ", labels)
 
             outputs = model(inputs)
-            #print("OUTPUTS: ", outputs)
+            # print("OUTPUTS: ", outputs)
             preds = torch.argmax(outputs)
-            #print("PREDS: ", preds)
-            #print("LABELS: ", labels)
+            # print("PREDS: ", preds)
+            # print("LABELS: ", labels)
             running_corrects += torch.sum(preds == labels)
             total_samples += labels.size(0)
 
@@ -332,12 +333,12 @@ def diverse_supplement_with_laion(train_dict, num_supplement=20):
         supplement_dict[pet_name] = []
         for i in range(len(diverse_names)):
             pet_image = client.query(text="an image of a " + diverse_names[i])
-            print('hello', diverse_names[i])
+            print("hello", diverse_names[i])
             num_pet_images = len(pet_image)
             print(num_pet_images)
             index = 0
             accepted = False
-            
+
             while not accepted:
                 image_path = pet_image[index]["url"]
                 print("IMAGE PATH: ", image_path)
@@ -346,9 +347,9 @@ def diverse_supplement_with_laion(train_dict, num_supplement=20):
                     if response.status_code == 200:
                         try:
                             image = Image.open(io.BytesIO(response.content))
-                            
+
                             image_array = process_image(image)
-                            
+
                             supplement_dict[pet_name].append(
                                 (image_array, train_dict[pet_name])
                             )
@@ -360,13 +361,14 @@ def diverse_supplement_with_laion(train_dict, num_supplement=20):
                 index += 1
     return supplement_dict
 
+
 def content_supplement_with_laion(
     train_dict, source_data, num_supplement=20, approach="closest"
 ):
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
         indice_name="laion5B-L-14",
-        num_images=500,
+        num_images=1000,
     )
     supplement_dict = {}
     for pet_name in train_dict.keys():
@@ -385,7 +387,7 @@ def content_supplement_with_laion(
                     try:
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
-                        intermediate_hund.append((image_array, train_dict[pet_name]))
+                        intermediate_hund.append(image_array.unsqueeze(dim=0))
                         max_abs = image_array.max()
                         if image_array.min() < 0:
                             max_abs = max(max_abs, -image_array.min())
@@ -396,7 +398,9 @@ def content_supplement_with_laion(
                         source_im = source_im / max_abs
                         scores.append(
                             learned_perceptual_image_patch_similarity(
-                                source_im.unsqueeze(dim=0), image_array.unsqueeze(dim=0), net_type="squeeze"
+                                source_im.unsqueeze(dim=0),
+                                image_array.unsqueeze(dim=0),
+                                net_type="squeeze",
                             )
                         )
                     except Exception as e:
@@ -411,8 +415,9 @@ def content_supplement_with_laion(
             best_k = torch.argsort(scores)[:num_supplement]
         intermediate_hund = torch.cat(intermediate_hund)
         final_tw = intermediate_hund[best_k]
-
-        supplement_dict[pet_name] = final_tw
+        supplement_dict[pet_name] = []
+        for item in final_tw:
+            supplement_dict[pet_name].append((item, train_dict[pet_name]))
 
     return supplement_dict
 
@@ -461,10 +466,10 @@ def main(args):
     # CREATE INITIAL DATA
     # TRAIN DATA
     # test 12500, dog 12499, cat 12499r
-    log_dir = 'runs/' + args.strategy
+    log_dir = "runs/" + args.strategy
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir)
-    
+
     cat_num = torch.randint(low=0, high=12499, size=(1,)).item()
     dog_num = torch.randint(low=0, high=12499, size=(1,)).item()
 
@@ -493,17 +498,16 @@ def main(args):
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
             supplement_data = semantic_NN_supplement_with_laion(
-                train_dict, img_cat, img_dog)
+                train_dict, img_cat, img_dog
+            )
         elif STRATEGY == "DIVERSE":
             # KATE TO DO
-            supplement_data = diverse_supplement_with_laion(
-                train_dict)
+            supplement_data = diverse_supplement_with_laion(train_dict)
         elif STRATEGY == "CONTENT":
             source_data = {"cat": train_data[0], "dog": train_data[1]}
             supplement_data = content_supplement_with_laion(train_dict, source_data)
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
-            
 
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
@@ -522,8 +526,6 @@ def main(args):
 
     # FINE-TUNE MODEL
     # CREATE THE MODEL
-    
-
 
     # Enable gradient computation for the newly created layers
     # for param in model.fc1.parameters():
@@ -538,15 +540,30 @@ def main(args):
     optimizer = optim.Adam(list(model.resnet.fc.parameters()), lr=0.0001)
 
     # TRAIN THE MODEL
-    trained_model = train_model(model, train_loader, criterion, optimizer, writer, num_epochs=5)
+    trained_model = train_model(
+        model, train_loader, criterion, optimizer, writer, num_epochs=5
+    )
 
     # EVALUATE THE MODEL
     eval_model(trained_model, test_loader, writer)
 
 
-if __name__=='__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    strategies = ["BASELINE", "RANDOM", "TEXT_RETRIEVAL", "SEMANTIC_NEAREST_NEIGHBOR", "CONTENT", "DIVERSE"]
-    parser.add_argument('--strategy', type=str, default="BASELINE", choices=strategies, help="Choose a mode from the options: {}".format(", ".join(strategies)))
-    os.makedirs('runs', exist_ok=True)
+    strategies = [
+        "BASELINE",
+        "RANDOM",
+        "TEXT_RETRIEVAL",
+        "SEMANTIC_NEAREST_NEIGHBOR",
+        "CONTENT",
+        "DIVERSE",
+    ]
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="BASELINE",
+        choices=strategies,
+        help="Choose a mode from the options: {}".format(", ".join(strategies)),
+    )
+    os.makedirs("runs", exist_ok=True)
     main(parser.parse_args())
