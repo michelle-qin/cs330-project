@@ -207,8 +207,7 @@ def process_image(image):
     img_tensor = preprocess(image)  # (3, 224, 224)
     return img_tensor
 
-
-def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
+def text_supplement_with_laion(unprocessed_train_loader, cache_folder, num_supplement=20):
     # MICHELLE
     # TO DO TRY IMAGES WITHOUT PROCESSING
     client = ClipClient(
@@ -244,6 +243,9 @@ def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
         pet_images = client.query(text=caption)
         num_pet_images = len(pet_images)
 
+        pet_folder = cache_folder + "/" + pet_name + "/"
+        os.makedirs(pet_folder, exist_ok=True)
+
         random_nums_used = []
         supplement_dict[pet_name] = []
         while len(supplement_dict[pet_name]) < num_supplement:
@@ -262,6 +264,10 @@ def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
                         supplement_dict[pet_name].append((image_array, [label]))
+                        image_path = os.path.join(pet_folder, str(len(supplement_dict[pet_name])) + '.jpg')
+                        with open(image_path, 'wb') as f:
+                            f.write(response.content)
+                        print(f"Image saved successfully at {image_path}")
                     except Exception as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
@@ -279,17 +285,20 @@ def get_image_emb(image):
         return image_emb
 
 
-def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_supplement=20):
+def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, cache_folder, num_supplement=120):
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
         indice_name="laion5B-L-14",
-        num_images=500,
+        num_images=1000,
     )
     cat_embed = get_image_emb(img_cat)
     dog_embed = get_image_emb(img_dog)
 
     supplement_dict = {}
+    
     for pet_name in train_dict.keys():
+        pet_folder = cache_folder + "/" + pet_name + "/"
+        os.makedirs(pet_folder, exist_ok=True)
         print(cat_embed)
         print(cat_embed.shape)
         if pet_name == "cat":
@@ -300,6 +309,7 @@ def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_suppleme
         print("num_pet_images", num_pet_images)
         supplement_dict[pet_name] = []
         i = 0
+        
         while len(supplement_dict[pet_name]) < num_supplement:
             image_path = pet_images[i]["url"]
             print("IMAGE PATH: ", image_path)
@@ -312,7 +322,10 @@ def semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, num_suppleme
                         supplement_dict[pet_name].append(
                             (image_array, train_dict[pet_name])
                         )
-                        print(len(supplement_dict[pet_name]))
+                        image_path = os.path.join(pet_folder, str(len(supplement_dict[pet_name])) + '.jpg')
+                        with open(image_path, 'wb') as f:
+                            f.write(response.content)
+                        print(f"Image saved successfully at {image_path}")
                     except Exception as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
@@ -461,6 +474,35 @@ def random_supplement_with_laion(train_dict, num_supplement=20):
 
     return supplement_dict
 
+def retrieve_cache_images(train_dict, cache_folder):
+    supplement_dict = {}
+    for pet_name in train_dict.keys():
+        dir_name = cache_folder+'/' + pet_name + '/'
+        supplement_dict[pet_name] = []
+        image_files = [f for f in os.listdir(dir_name) if os.path.isfile(os.path.join(dir_name, f))]
+        print(image_files)
+        if not image_files:
+            print(f"No images found in the cache folder: {cache_folder}")
+            return
+
+        # Iterate through the image files and open them
+    
+        for image_file in image_files:
+            image_path = os.path.join(dir_name, image_file)
+            
+            try:
+                # Open the image
+                image = Image.open(image_path)
+                image_array = process_image(image)
+                supplement_dict[pet_name].append(
+                                (image_array, train_dict[pet_name])
+                            )
+
+            except Exception as e:
+                # Handle any potential errors while opening images
+                print(f"Error opening image {image_path}: {e}")
+    return supplement_dict
+
 
 def main(args):
     # CREATE INITIAL DATA
@@ -483,23 +525,34 @@ def main(args):
     train_labels = [[0], [1]]
     unprocessed_train_loader = [(img_cat, 0), (img_dog, 1)]
     train_loader = [(train_data[i], train_labels[i]) for i in range(len(train_data))]
-    model = CustomResNet(num_classes=2)
+    
     # SUPPLEMENT DATA
     STRATEGY = args.strategy
+    cache_folder = STRATEGY+"_cache"
     print("USING STRATEGY: ", STRATEGY)
     if STRATEGY == "BASELINE":
         pass
     else:
         # supplement_data key: pet_name, value: list of (image, label) tuples
         if STRATEGY == "RANDOM":
-            supplement_data = random_supplement_with_laion(train_dict)
+            if not os.path.exists(cache_folder):
+                os.makedirs(cache_folder)
+                supplement_data = random_supplement_with_laion(train_dict, cache_folder)
+            else:
+                supplement_data = retrieve_cache_images(train_dict, cache_folder)
         elif STRATEGY == "TEXT_RETRIEVAL":
-            supplement_data = text_supplement_with_laion(unprocessed_train_loader)
+            if not os.path.exists(cache_folder):
+                os.makedirs(cache_folder)
+                supplement_data = text_supplement_with_laion(unprocessed_train_loader, cache_folder=cache_folder)
+            else:
+                supplement_data = retrieve_cache_images(train_dict, cache_folder)
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
-            supplement_data = semantic_NN_supplement_with_laion(
-                train_dict, img_cat, img_dog
-            )
+            if not os.path.exists(cache_folder):
+                os.makedirs(cache_folder)
+                supplement_data = semantic_NN_supplement_with_laion(train_dict, img_cat, img_dog, cache_folder=cache_folder)
+            else:
+                supplement_data = retrieve_cache_images(train_dict, cache_folder)
         elif STRATEGY == "DIVERSE":
             # KATE TO DO
             supplement_data = diverse_supplement_with_laion(train_dict)
@@ -509,6 +562,8 @@ def main(args):
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
 
+            
+    model = CustomResNet(num_classes=2)
     # TEST DATA
     random_nums_used = [cat_num, dog_num]
     test_loader = []
@@ -537,7 +592,7 @@ def main(args):
     #     list(model.fc1.parameters()) + list(model.fc2.parameters()), lr=0.0000001
     # )
     # model.resnet.fc.parameters()
-    optimizer = optim.Adam(list(model.resnet.fc.parameters()), lr=0.0001)
+    optimizer = optim.Adam(list(model.resnet.fc.parameters()), lr=0.0005)
 
     # TRAIN THE MODEL
     trained_model = train_model(
