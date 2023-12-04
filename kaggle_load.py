@@ -97,7 +97,7 @@ class CustomResNet(nn.Module):
     def forward(self, x):
         # Use the existing ResNet architecture up to the last layer
         x = self.resnet(x)
-        print(x.shape)
+        # print(x.shape)
         # Apply the two new fully connected layers
         # x = self.fc1(x)
         # x = nn.ReLU()(x)  # You need a non-linear activation function here
@@ -105,7 +105,7 @@ class CustomResNet(nn.Module):
         return x
 
 
-def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1):
+def train_model(model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=1000):
     # If a GPU is available, move the model to GPU
     # probably the learning rate is too large
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -119,6 +119,7 @@ def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1)
 
         # Iterate over the training data
         random.shuffle(train_loader)
+        optimizer.zero_grad()
         for inputs, labels in train_loader:
             # Move inputs and labels to the same device as the model
             # batch size for resnet is a lot better and needs to be a really small learning rate
@@ -128,32 +129,37 @@ def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1)
             ).to(device)
 
             # Zero the parameter gradients
-            optimizer.zero_grad()
+            
 
             # Forward pass
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            print(preds, labels)
+            # print(preds, labels)
             loss = criterion(outputs, labels)
-            print(loss)
+            # print(loss)
 
             # Backward pass and optimize
             loss.backward()
-            optimizer.step()
 
             # Statistics
             running_loss += loss.item()
             # * inputs.size(0)
             running_corrects += torch.sum(preds == labels)
+        
+        optimizer.step()
 
         epoch_loss = running_loss / len(train_loader)
         epoch_acc = running_corrects.double() / len(train_loader)
         writer.add_scalar("training loss", epoch_loss, epoch)
         writer.add_scalar("training accuracy", epoch_acc, epoch)
 
-        print(
-            f"Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Train_Acc: {epoch_acc:.4f}"
-        )
+        if epoch % 20 == 0:
+            eval_model(model, criterion, test_loader)
+
+        if epoch % 20 == 0:
+            print(
+                f"Epoch {epoch}/{num_epochs - 1} - Loss: {epoch_loss:.4f} Train_Acc: {epoch_acc:.4f}"
+            )
 
     return model
 
@@ -172,12 +178,12 @@ def train_model(model, train_loader, criterion, optimizer, writer, num_epochs=1)
 #     print(f"Eval Accuracy: {total_acc}")
 
 
-def eval_model(model, test_loader):
+def eval_model(model, criterion, test_loader):
     model.eval()  # Set the model to evaluation mode
 
     running_corrects = 0
     total_samples = 0
-
+    running_loss = 0.0
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
@@ -186,6 +192,8 @@ def eval_model(model, test_loader):
 
             outputs = model(inputs)
             # print("OUTPUTS: ", outputs)
+            loss = criterion(outputs, labels)
+            running_loss += loss.item()
             preds = torch.argmax(outputs)
             # print("PREDS: ", preds)
             # print("LABELS: ", labels)
@@ -193,7 +201,8 @@ def eval_model(model, test_loader):
             total_samples += labels.size(0)
 
     total_acc = running_corrects.double() / total_samples
-    print(f"Eval Accuracy: {total_acc:.4f}")
+    eval_loss = running_loss / len(test_loader)
+    print(f"Eval Loss: {eval_loss:.4f} Accuracy: {total_acc:.4f}")
 
 
 def process_image(image):
@@ -537,11 +546,12 @@ def main(args):
     else:
         # supplement_data key: pet_name, value: list of (image, label) tuples
         if STRATEGY == "RANDOM":
-            if not os.path.exists(cache_folder):
-                os.makedirs(cache_folder)
-                supplement_data = random_supplement_with_laion(train_dict, cache_folder)
-            else:
-                supplement_data = retrieve_cache_images(train_dict, cache_folder)
+            # if not os.path.exists(cache_folder):
+            #     os.makedirs(cache_folder)
+            #     supplement_data = random_supplement_with_laion(train_dict, cache_folder)
+            # else:
+            #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
+            supplement_data = random_supplement_with_laion(train_dict)
         elif STRATEGY == "TEXT_RETRIEVAL":
             if not os.path.exists(cache_folder):
                 os.makedirs(cache_folder)
@@ -603,11 +613,11 @@ def main(args):
 
     # TRAIN THE MODEL
     trained_model = train_model(
-        model, train_loader, criterion, optimizer, writer, num_epochs=5
+        model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=1000
     )
 
     # EVALUATE THE MODEL
-    eval_model(trained_model, test_loader, writer)
+    eval_model(trained_model, criterion, test_loader)
 
 
 if __name__ == "__main__":
