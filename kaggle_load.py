@@ -385,7 +385,7 @@ def content_supplement_with_laion(
                     try:
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
-                        intermediate_hund.append((image_array, train_dict[pet_name]))
+                        intermediate_hund.append(image_array)
                         max_abs = image_array.max()
                         if image_array.min() < 0:
                             max_abs = max(max_abs, -image_array.min())
@@ -411,8 +411,9 @@ def content_supplement_with_laion(
             best_k = torch.argsort(scores)[:num_supplement]
         intermediate_hund = torch.cat(intermediate_hund)
         final_tw = intermediate_hund[best_k]
-
-        supplement_dict[pet_name] = final_tw
+        supplement_dict[pet_name] = []
+        for item in final_tw:
+            supplement_dict[pet_name].append((item, train_dict[pet_name]))
 
     return supplement_dict
 
