@@ -376,7 +376,7 @@ def diverse_supplement_with_laion(train_dict, num_supplement=20):
 
 
 def content_supplement_with_laion(
-    train_dict, source_data, num_supplement=20, approach="closest"
+    train_dict, source_data, source_paths, num_supplement=20, approach="closest"
 ):
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
@@ -385,7 +385,7 @@ def content_supplement_with_laion(
     )
     supplement_dict = {}
     for pet_name in train_dict.keys():
-        pet_images = client.query(text="an image of a " + pet_name)
+        pet_images = client.query(image=source_paths[pet_name])
         num_pet_images = len(pet_images)
         source_im = source_data[pet_name]
         intermediate_hund = []
@@ -514,9 +514,11 @@ def main(args):
 
     cat_num = torch.randint(low=0, high=12499, size=(1,)).item()
     dog_num = torch.randint(low=0, high=12499, size=(1,)).item()
+    cat_path = "kaggle_data/train/cat." + str(cat_num) + ".jpg"
+    dog_path = "kaggle_data/train/dog." + str(dog_num) + ".jpg"
 
-    img_cat = Image.open("kaggle_data/train/cat." + str(cat_num) + ".jpg")
-    img_dog = Image.open("kaggle_data/train/dog." + str(dog_num) + ".jpg")
+    img_cat = Image.open(cat_path)
+    img_dog = Image.open(dog_path)
     train_cat = process_image(img_cat)
     train_dog = process_image(img_dog)
 
@@ -558,7 +560,12 @@ def main(args):
             supplement_data = diverse_supplement_with_laion(train_dict)
         elif STRATEGY == "CONTENT":
             source_data = {"cat": train_data[0], "dog": train_data[1]}
-            supplement_data = content_supplement_with_laion(train_dict, source_data)
+            source_paths = {"cat": cat_path, "dog": dog_path}
+            supplement_data = content_supplement_with_laion(train_dict, source_data, source_paths)
+        elif STRATEGY == "CONTENT_DIVERSE":
+            source_data = {"cat": train_data[0], "dog": train_data[1]}
+            source_paths = {"cat": cat_path, "dog": dog_path}
+            supplement_data = content_supplement_with_laion(train_dict, source_data, source_paths, approach="furthest")
         for pet_name in train_dict.keys():
             train_loader.extend(supplement_data[pet_name])
 
@@ -611,6 +618,7 @@ if __name__ == "__main__":
         "TEXT_RETRIEVAL",
         "SEMANTIC_NEAREST_NEIGHBOR",
         "CONTENT",
+        "CONTENT_DIVERSE",
         "DIVERSE",
     ]
     parser.add_argument(
