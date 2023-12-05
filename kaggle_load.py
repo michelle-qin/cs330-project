@@ -402,9 +402,10 @@ def content_supplement_with_laion(
         source_im = source_data[pet_name]
         intermediate_hund = []
         scores = []
-        for i in range(100):
-            # while len(supplement_dict[pet_name]) < num_supplement:
+        i = 0
+        while len(intermediate_hund) < 100:
             image_path = pet_images[i]["url"]
+            i += 1
             print("IMAGE PATH: ", image_path)
             try:
                 response = requests.get(image_path)
@@ -425,7 +426,7 @@ def content_supplement_with_laion(
                             learned_perceptual_image_patch_similarity(
                                 source_im.unsqueeze(dim=0),
                                 image_array.unsqueeze(dim=0),
-                                net_type="squeeze",
+                                net_type="alex",
                             )
                         )
                     except Exception as e:
@@ -435,7 +436,7 @@ def content_supplement_with_laion(
 
         scores = torch.tensor(scores)
         if approach == "furthest":
-            best_k = torch.topk(scores, num_supplement)
+            best_k = torch.argsort(scores)[(100-num_supplement):]
         elif approach == "closest":
             best_k = torch.argsort(scores)[:num_supplement]
         intermediate_hund = torch.cat(intermediate_hund)
