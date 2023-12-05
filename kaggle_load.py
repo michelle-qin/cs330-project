@@ -219,7 +219,7 @@ def process_image(image):
     img_tensor = preprocess(image)  # (3, 224, 224)
     return img_tensor
 
-def text_supplement_with_laion(unprocessed_train_loader, cache_folder, num_supplement=20):
+def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
     # MICHELLE
     # TO DO TRY IMAGES WITHOUT PROCESSING
     client = ClipClient(
@@ -255,8 +255,8 @@ def text_supplement_with_laion(unprocessed_train_loader, cache_folder, num_suppl
         pet_images = client.query(text=caption)
         num_pet_images = len(pet_images)
 
-        pet_folder = cache_folder + "/" + pet_name + "/"
-        os.makedirs(pet_folder, exist_ok=True)
+        # pet_folder = cache_folder + "/" + pet_name + "/"
+        # os.makedirs(pet_folder, exist_ok=True)
 
         random_nums_used = []
         supplement_dict[pet_name] = []
@@ -276,10 +276,10 @@ def text_supplement_with_laion(unprocessed_train_loader, cache_folder, num_suppl
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
                         supplement_dict[pet_name].append((image_array, [label]))
-                        image_path = os.path.join(pet_folder, str(len(supplement_dict[pet_name])) + '.jpg')
-                        with open(image_path, 'wb') as f:
-                            f.write(response.content)
-                        print(f"Image saved successfully at {image_path}")
+                        # image_path = os.path.join(pet_folder, str(len(supplement_dict[pet_name])) + '.jpg')
+                        # with open(image_path, 'wb') as f:
+                        #     f.write(response.content)
+                        # print(f"Image saved successfully at {image_path}")
                     except Exception as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
@@ -556,11 +556,12 @@ def main(args):
             #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
             supplement_data = random_supplement_with_laion(train_dict)
         elif STRATEGY == "TEXT_RETRIEVAL":
-            if not os.path.exists(cache_folder):
-                os.makedirs(cache_folder)
-                supplement_data = text_supplement_with_laion(unprocessed_train_loader, cache_folder=cache_folder)
-            else:
-                supplement_data = retrieve_cache_images(train_dict, cache_folder)
+            # if not os.path.exists(cache_folder):
+            #     os.makedirs(cache_folder)
+            #     supplement_data = text_supplement_with_laion(unprocessed_train_loader, cache_folder=cache_folder)
+            # else:
+            #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
+            supplement_data = text_supplement_with_laion(unprocessed_train_loader)
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
             if not os.path.exists(cache_folder):
@@ -616,7 +617,7 @@ def main(args):
 
     # TRAIN THE MODEL
     trained_model = train_model(
-        model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=100
+        model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=1000
     )
 
     # EVALUATE THE MODEL
