@@ -154,7 +154,9 @@ def train_model(model, train_loader, criterion, optimizer, writer, test_loader, 
         writer.add_scalar("training accuracy", epoch_acc, epoch)
 
         if epoch % 20 == 0:
-            eval_model(model, criterion, test_loader)
+            eval_acc, eval_loss = eval_model(model, criterion, test_loader)
+            writer.add_scalar("evaluation loss", eval_loss, epoch)
+            writer.add_scalar("evaluation accuracy", eval_acc, epoch)
 
         if epoch % 20 == 0:
             print(
@@ -203,6 +205,7 @@ def eval_model(model, criterion, test_loader):
     total_acc = running_corrects.double() / total_samples
     eval_loss = running_loss / len(test_loader)
     print(f"Eval Loss: {eval_loss:.4f} Accuracy: {total_acc:.4f}")
+    return (total_acc, eval_loss)
 
 
 def process_image(image):
@@ -613,11 +616,13 @@ def main(args):
 
     # TRAIN THE MODEL
     trained_model = train_model(
-        model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=1000
+        model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=100
     )
 
     # EVALUATE THE MODEL
-    eval_model(trained_model, criterion, test_loader)
+    total_acc, _ = eval_model(trained_model, criterion, test_loader)
+    print(f'Final accuracy on test:{total_acc}')
+    
 
 
 if __name__ == "__main__":
