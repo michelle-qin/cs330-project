@@ -21,59 +21,6 @@ from torchmetrics.functional.image.lpips import (
     learned_perceptual_image_patch_similarity,
 )
 
-# STRATEGY = "RANDOM"
-# STRATEGY = "BASELINE"
-# STRATEGY = "TEXT_RETRIEVAL"
-# STRATEGY = "SEMANTIC_NEAREST_NEIGHBOR"
-# STRATEGY = "DIVERSE_IMAGES"
-
-
-cat_breeds = [
-    "Persian Cat",
-    "Siamese Cat",
-    "Maine Coon",
-    "Sphynx Cat",
-    "Bengal Cat",
-    "Scottish Fold",
-    "Ragdoll Cat",
-    "Burmese Cat",
-    "Abyssinian Cat",
-    "Russian Blue",
-    "Cornish Rex",
-    "Norwegian Forest Cat",
-    "Manx Cat",
-    "Egyptian Mau",
-    "Munchkin Cat",
-    "Turkish Van",
-    "Himalayan Cat",
-    "Chartreux Cat",
-    "Oriental Shorthair",
-    "American Shorthair",
-]
-
-dog_breeds = [
-    "Labrador Retriever",
-    "German Shepherd",
-    "Golden Retriever",
-    "Bulldog",
-    "Poodle",
-    "Beagle",
-    "Boxer",
-    "Dachshund",
-    "Siberian Husky",
-    "Great Dane",
-    "Shih Tzu",
-    "Chihuahua",
-    "Rottweiler",
-    "Doberman Pinscher",
-    "Pomeranian",
-    "Border Collie",
-    "King Charles Spaniel",
-    "Australian Shepherd",
-    "Pug",
-    "Dalmatian",
-]
-
 bird_descriptions = [
     "Majestic eagle soars above mountains, piercing eyes and powerful beak.",
     "Tiny hummingbird hovers near red flower, iridescent feathers shimmering.",
@@ -132,23 +79,10 @@ class CustomResNet(nn.Module):
         self.resnet.fc = nn.Linear(512, num_classes)
         print("resnet", self.resnet)
 
-        # Remove the last fully connected layer of the ResNet model
-        # self.resnet.fc = nn.Identity()
-        # Freeze all layers
-        # for param in self.resnet.parameters():
-        #     param.requires_grad = False
-        # don't do this inside the class!
-        # Replace the last fully connected layer
-        # self.fc1 = nn.Linear(num_ftrs, num_classes)
 
     def forward(self, x):
         # Use the existing ResNet architecture up to the last layer
         x = self.resnet(x)
-        # print(x.shape)
-        # Apply the two new fully connected layers
-        # x = self.fc1(x)
-        # x = nn.ReLU()(x)  # You need a non-linear activation function here
-        # x = self.fc2(x)
         return x
 
 
@@ -211,20 +145,6 @@ def train_model(model, train_loader, criterion, optimizer, writer, test_loader, 
             )
 
     return model
-
-
-# def eval_model(model, test_loader):
-#     running_corrects = 0
-#     with torch.no_grad():
-#         for inputs, labels in test_loader:
-#             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
-#             outputs = model(inputs)
-#             _, preds = torch.max(outputs, 1)
-#             print(preds, labels)
-#             print(preds == labels)
-#             running_corrects += torch.sum(preds == labels)
-#     total_acc = running_corrects.double() / len(test_loader)
-#     print(f"Eval Accuracy: {total_acc}")
 
 
 def eval_model(model, criterion, test_loader):
@@ -326,10 +246,6 @@ def text_supplement_with_laion(unprocessed_train_loader, num_supplement=20):
                         image = Image.open(io.BytesIO(response.content))
                         image_array = process_image(image)
                         supplement_dict[pet_name].append((image_array, [label]))
-                        # image_path = os.path.join(pet_folder, str(len(supplement_dict[pet_name])) + '.jpg')
-                        # with open(image_path, 'wb') as f:
-                        #     f.write(response.content)
-                        # print(f"Image saved successfully at {image_path}")
                     except Exception as e:
                         print("Issue with getting image: ", e)
             except requests.exceptions.RequestException as e:
@@ -606,18 +522,9 @@ def main(args):
     else:
         # supplement_data key: pet_name, value: list of (image, label) tuples
         if STRATEGY == "RANDOM":
-            # if not os.path.exists(cache_folder):
-            #     os.makedirs(cache_folder)
-            #     supplement_data = random_supplement_with_laion(train_dict, cache_folder)
-            # else:
-            #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
             supplement_data = random_supplement_with_laion(train_dict)
         elif STRATEGY == "TEXT_RETRIEVAL":
-            # if not os.path.exists(cache_folder):
-            #     os.makedirs(cache_folder)
-            #     supplement_data = text_supplement_with_laion(unprocessed_train_loader, cache_folder=cache_folder)
-            # else:
-            #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
+
             supplement_data = text_supplement_with_laion(unprocessed_train_loader)
         elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
             # KATE TO DO
