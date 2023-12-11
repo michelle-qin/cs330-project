@@ -1,8 +1,8 @@
-# Set up
+## Set Up
 1. Follow all commands here: https://github.com/rom1504/clip-retrieval/blob/main/docs/laion5B_back.md
 2. `source .env/bin/activate`
 
-# Installations
+## Installations
 
 For the image captioning model:
 
@@ -10,7 +10,7 @@ For the image captioning model:
 pip install transformers pillow
 ```
 
-# How to Run
+## How to Run
 After cloning the repo, enter this in the command line: 
 
 ```bash
