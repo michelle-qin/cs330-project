@@ -46,23 +46,13 @@ def train_model(model, train_loader, criterion, optimizer, writer, test_loader, 
             inputs, labels = inputs.unsqueeze(dim=0).to(device), torch.tensor(
                 labels
             ).to(device)
-
-            # Zero the parameter gradients
-            
-
-            # Forward pass
+        
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            # print(preds, labels)
             loss = criterion(outputs, labels)
-            # print(loss)
-
-            # Backward pass and optimize
             loss.backward()
 
-            # Statistics
             running_loss += loss.item()
-            # * inputs.size(0)
             running_corrects += torch.sum(preds == labels)
         
         optimizer.step()
@@ -98,12 +88,9 @@ def eval_model(model, criterion, test_loader):
             inputs, labels = inputs.unsqueeze(dim=0).to(device), torch.tensor(labels).to(device)
 
             outputs = model(inputs)
-            # print("OUTPUTS: ", outputs)
             loss = criterion(outputs, labels)
             running_loss += loss.item()
             preds = torch.argmax(outputs)
-            # print("PREDS: ", preds)
-            # print("LABELS: ", labels)
             running_corrects += torch.sum(preds == labels)
             total_samples += labels.size(0)
 
@@ -179,40 +166,6 @@ def main(args):
     STRATEGY = args.strategy
     cache_folder = STRATEGY+"_cache"
     train_loader = retrieve_train_loader(train_dict, cache_folder)
-    # print("USING STRATEGY: ", STRATEGY)
-    # if STRATEGY == "BASELINE":
-    #     pass
-    # else:
-    #     # supplement_data key: pet_name, value: list of (image, label) tuples
-    #     if STRATEGY == "RANDOM":
-    #         # if not os.path.exists(cache_folder):
-    #         #     os.makedirs(cache_folder)
-    #         #     supplement_data = random_supplement_with_laion(train_dict, cache_folder)
-    #         # else:
-    #         #     supplement_data = retrieve_cache_images(train_dict, cache_folder)
-    #         supplement_data = random_supplement_with_laion(train_dict)
-    #     elif STRATEGY == "TEXT_RETRIEVAL":
-    #         if not os.path.exists(cache_folder):
-    #             os.makedirs(cache_folder)
-    #             supplement_data = text_supplement_with_laion(unprocessed_train_loader, cache_folder=cache_folder)
-    #         else:
-    #             supplement_data = retrieve_cache_images(train_dict, cache_folder)
-    #     elif STRATEGY == "SEMANTIC_NEAREST_NEIGHBOR":
-    #         # KATE TO DO
-    #         supplement_data = semantic_NN_supplement_with_laion(train_dict, train_images, cache_folder=cache_folder)
-    #     elif STRATEGY == "DIVERSE":
-    #         # KATE TO DO
-    #         supplement_data = diverse_supplement_with_laion(train_dict)
-    #     elif STRATEGY == "CONTENT":
-    #         source_data = {"cat": train_data[0], "dog": train_data[1]}
-    #         source_paths = {"cat": cat_path, "dog": dog_path}
-    #         supplement_data = content_supplement_with_laion(train_dict, source_data, source_paths)
-    #     elif STRATEGY == "CONTENT_DIVERSE":
-    #         source_data = {"cat": train_data[0], "dog": train_data[1]}
-    #         source_paths = {"cat": cat_path, "dog": dog_path}
-    #         supplement_data = content_supplement_with_laion(train_dict, source_data, source_paths, approach="furthest")
-    #     for pet_name in train_dict.keys():
-    #         train_loader.extend(supplement_data[pet_name])
 
             
     model = CustomResNet(num_classes=5)
@@ -232,22 +185,9 @@ def main(args):
         test_loader.extend([(test_cat, [0]), (test_dog, [1])])
 
 
-    # FINE-TUNE MODEL
-    # CREATE THE MODEL
-
-    # Enable gradient computation for the newly created layers
-    # for param in model.fc1.parameters():
-    #     param.requires_grad = True
-
-    # Define Loss Function and Optimizer
     criterion = nn.CrossEntropyLoss()
-    # optimizer = optim.Adam(
-    #     list(model.fc1.parameters()) + list(model.fc2.parameters()), lr=0.0000001
-    # )
-    # model.resnet.fc.parameters()
     optimizer = optim.Adam(list(model.resnet.fc.parameters()), lr=0.0005)
 
-    print(len(train_loader))
     # TRAIN THE MODEL
     trained_model = train_model(
         model, train_loader, criterion, optimizer, writer, test_loader, num_epochs=1000

@@ -168,29 +168,20 @@ def train_model(model, train_loader, criterion, optimizer, writer, test_loader, 
         random.shuffle(train_loader)
         optimizer.zero_grad()
         for inputs, labels in train_loader:
-            # Move inputs and labels to the same device as the model
-            # batch size for resnet is a lot better and needs to be a really small learning rate
-            # should shuffle the cat and dogs!! and shuffle at every epoch!
             inputs, labels = inputs.unsqueeze(dim=0).to(device), torch.tensor(
                 labels
             ).to(device)
-
-            # Zero the parameter gradients
             
-
             # Forward pass
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
-            # print(preds, labels)
             loss = criterion(outputs, labels)
-            # print(loss)
 
             # Backward pass and optimize
             loss.backward()
 
             # Statistics
             running_loss += loss.item()
-            # * inputs.size(0)
             running_corrects += torch.sum(preds == labels)
         
         optimizer.step()
@@ -224,12 +215,10 @@ def eval_model(model, criterion, test_loader):
             inputs, labels = inputs.unsqueeze(dim=0), torch.tensor(labels)
 
             outputs = model(inputs)
-            # print("OUTPUTS: ", outputs)
             loss = criterion(outputs, labels)
             running_loss += loss.item()
             preds = torch.argmax(outputs)
-            # print("PREDS: ", preds)
-            # print("LABELS: ", labels)
+
             running_corrects += torch.sum(preds == labels)
             total_samples += labels.size(0)
 
@@ -251,15 +240,12 @@ def process_image(image):
     return img_tensor
 
 def text_supplement_with_laion(unprocessed_train_loader, cache_folder, num_supplement=20):
-    # MICHELLE
-    # TO DO TRY IMAGES WITHOUT PROCESSING
     client = ClipClient(
         url="https://knn.laion.ai/knn-service",
         indice_name="laion5B-L-14",
         num_images=500,
     )
     supplement_dict = {}
-    # supplement_data key: pet_name, value: list of (image, label) tuples
 
     # Image Captioning Model
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
@@ -439,7 +425,6 @@ def content_supplement_with_laion(
         scores = []
         saved_content = []
         for i in range(30):
-            # while len(supplement_dict[pet_name]) < num_supplement:
             image_path = pet_images[i]["url"]
             print("IMAGE PATH: ", image_path)
             try:
@@ -542,12 +527,10 @@ def retrieve_cache_images(train_dict, cache_folder):
         dir_name = cache_folder+'/' + pet_name + '/'
         supplement_dict[pet_name] = []
         image_files = [f for f in os.listdir(dir_name) if os.path.isfile(os.path.join(dir_name, f))]
-        print(image_files)
         if not image_files:
             print(f"No images found in the cache folder: {cache_folder}")
             return
 
-        # Iterate through the image files and open them
     
         for image_file in image_files:
             image_path = os.path.join(dir_name, image_file)
@@ -569,7 +552,6 @@ def retrieve_cache_images(train_dict, cache_folder):
 def main(args):
     # CREATE INITIAL DATA
     # TRAIN DATA
-    # test 12500, dog 12499, cat 12499r
     log_dir = "five_class_runs/" + args.strategy
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir)
@@ -578,8 +560,6 @@ def main(args):
     dog_num = 5153
     cat_path = "kaggle_data/train/cat." + str(cat_num) + ".jpg"
     dog_path = "kaggle_data/train/dog." + str(dog_num) + ".jpg"
-    print(cat_path)
-    print(dog_path)
     
     extra_animals = ['chicken', 'spider', 'horse']
 
