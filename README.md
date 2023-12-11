@@ -16,3 +16,7 @@ After cloning the repo, enter this in the command line:
 ```bash
 python kaggle_load.py
 ```
+
+## Datasets
+
+We linked the datasets we used in Section 4.2 of our final report, submitted to Gradescope.
